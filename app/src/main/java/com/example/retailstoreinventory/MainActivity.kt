@@ -20,12 +20,19 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,6 +57,65 @@ class MainActivity : ComponentActivity() {
 fun MainScreen() {
     val local_focus_manager = LocalFocusManager.current
 
+    val my_items = listOf(
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango",
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango",
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango",
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango",
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango",
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango",
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango",
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango",
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Orange",
+        "Mango"
+    )
+
+    val search_bar_state = rememberTextFieldState()
+
+    val filtered_my_items_state = remember { mutableStateOf(my_items) }
+
+    LaunchedEffect(search_bar_state.text) {
+        filtered_my_items_state.value = if (search_bar_state.text.isBlank()) my_items
+        else my_items.filter {
+            it.contains(search_bar_state.text, ignoreCase = true)
+        }
+    }
+
     Scaffold(
         content = { innerPadding ->
             Box(
@@ -73,8 +139,6 @@ fun MainScreen() {
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val search_bar_state = rememberTextFieldState()
-
                         OutlinedTextField(
                             state = search_bar_state,
                             label = { Text("Search") },
@@ -84,7 +148,7 @@ fun MainScreen() {
                             onClick = {
                                 local_focus_manager.clearFocus()
 
-                                //
+                                filtered_my_items_state.value = filtered_my_items_state.value.sorted()
                             }) { Text("Sort") }
                     }
 
@@ -93,7 +157,29 @@ fun MainScreen() {
                             .fillMaxWidth()
                             .weight(1.0f)
                     ) {
-                        // aici ramane de facut lista cu produsele
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                        ) {
+                            items(filtered_my_items_state.value) { item ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                ) {
+                                    Button(
+                                        modifier = Modifier
+                                            .align(Alignment.Center)
+                                            .width(280.dp) ,
+                                        shape = RectangleShape,
+                                            onClick = {
+                                            local_focus_manager.clearFocus()
+
+                                            //
+                                        },
+                                    ) { Text(item) }
+                                }
+                            }
+                        }
                     }
 
                     Box(
