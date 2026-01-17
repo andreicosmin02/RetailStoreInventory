@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.example.retailstoreinventory.BarcodeScanner
+import com.example.retailstoreinventory.ui.camera.BarcodeScanner
 
 @Composable
 fun ScannerScreen(onResult: (String) -> Unit, onBack: () -> Unit) {

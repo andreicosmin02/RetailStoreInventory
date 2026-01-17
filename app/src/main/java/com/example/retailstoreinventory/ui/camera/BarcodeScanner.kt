@@ -1,7 +1,11 @@
-package com.example.retailstoreinventory
+package com.example.retailstoreinventory.ui.camera
 
 import androidx.camera.core.ImageProxy
-import com.google.zxing.*
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 
 class BarcodeScanner {
@@ -32,7 +36,8 @@ class BarcodeScanner {
             }
         }
 
-        val source = PlanarYUVLuminanceSource(rotatedData, height, width, 0, 0, height, width, false)
+        val source =
+            PlanarYUVLuminanceSource(rotatedData, height, width, 0, 0, height, width, false)
         val bitmap = BinaryBitmap(HybridBinarizer(source))
 
         return try {

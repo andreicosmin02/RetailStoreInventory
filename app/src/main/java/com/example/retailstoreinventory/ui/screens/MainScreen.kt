@@ -23,23 +23,21 @@ import com.example.retailstoreinventory.data.models.Product
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    products: List<Product>,
+    products: List<Product>, // This now represents the filtered list from ViewModel
     onItemClick: (Product) -> Unit,
     onScanClick: () -> Unit,
     onSearch: (String) -> Unit
 ) {
     val localFocusManager = LocalFocusManager.current
     val searchBarState = rememberTextFieldState()
-    var filteredProducts by remember { mutableStateOf(products) }
 
+    // Update the search query in the ViewModel whenever the text changes
     LaunchedEffect(searchBarState.text) {
-        onSearch(searchBarState.text.toString())
-        filteredProducts = if (searchBarState.text.toString().isBlank()) products
-        else products.filter {
-            it.name.contains(searchBarState.text.toString(), ignoreCase = true) ||
-                    it.barcode.contains(searchBarState.text.toString(), ignoreCase = true)
-        }
+        onSearch(searchBarState.text.toString()) // This updates the ViewModel's internal state and the 'products' list
     }
+
+    // Set the initial text if needed, maybe from ViewModel if it tracks search state separately
+    // Otherwise, just use the text field normally, and the LaunchedEffect handles updates.
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -68,7 +66,8 @@ fun MainScreen(
                     )
                     FilledTonalIconButton(
                         onClick = {
-                            filteredProducts = filteredProducts.sortedBy { it.name }
+                            // Sorting logic would need to be handled in the ViewModel too
+                            // For now, just clear focus
                             localFocusManager.clearFocus()
                         },
                         modifier = Modifier.size(56.dp),
@@ -79,7 +78,7 @@ fun MainScreen(
                 }
             }
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(filteredProducts) { product ->
+                items(products) { product -> // Use the 'products' list directly, which is now managed by ViewModel
                     InventoryCard(product = product, onClick = { onItemClick(product) })
                 }
             }
