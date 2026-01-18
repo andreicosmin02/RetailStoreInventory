@@ -5,29 +5,31 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.retailstoreinventory.data.models.InventoryChangeEvent
 import com.example.retailstoreinventory.data.models.Product
 import com.example.retailstoreinventory.data.repository.ProductRepository
 import com.example.retailstoreinventory.data.repository.ProductRepositoryImpl
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class ProductViewModel @Inject constructor(private val repository: ProductRepository) : ViewModel() {
 
-    /**
-     * Simple reactive products list.
-     * This is only created AFTER the database is initialized,
-     * so the database is guaranteed to have data.
-     */
     private val _allProducts = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = _allProducts.asStateFlow()
 
     var uiState by mutableStateOf<UiState>(UiState.Success)
         private set
+
+    val inventoryEvents: Flow<InventoryChangeEvent> = repository.observeInventoryChanges()
+
+    private val _searchQuery = MutableStateFlow("")
 
     init {
         if (repository is ProductRepositoryImpl) {
@@ -35,20 +37,39 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
                 repository.observeAllProducts()
                     .collect { newList ->
                         _allProducts.value = newList
-                        // If there's an active search filter, apply it again to the new list
                         if (_searchQuery.value.isNotBlank()) {
                             applyFilter(_searchQuery.value, newList)
                         }
                     }
             }
         }
+
+        viewModelScope.launch {
+            inventoryEvents.collectLatest { event ->
+                applyInventoryEventToState(event)
+            }
+        }
+    }
+
+    private fun applyInventoryEventToState(event: InventoryChangeEvent) {
+        val updated = _allProducts.value.map { p ->
+            if (p.id == event.productId) {
+                p.copy(quantity = event.newQuantity)
+            } else {
+                p
+            }
+        }
+
+        if (_searchQuery.value.isNotBlank()) {
+            applyFilter(_searchQuery.value, updated)
+        } else {
+            _allProducts.value = updated
+        }
     }
 
     suspend fun getProductByBarcode(barcode: String): Product? {
         return repository.getProductByBarcode(barcode)
     }
-
-    private val _searchQuery = MutableStateFlow("")
 
     private fun applyFilter(query: String, currentList: List<Product>) {
         val filtered = if (query.isBlank()) {
@@ -68,7 +89,7 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
                 _searchQuery.value = query
                 val currentList = _allProducts.value
                 applyFilter(query, currentList)
-                uiState = if (currentList.isEmpty()) {
+                uiState = if (_allProducts.value.isEmpty()) {
                     UiState.Empty
                 } else {
                     UiState.Success
@@ -89,11 +110,6 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
         }
     }
 
-    /**
-     * Record a sale transaction for a product.
-     * This decrements inventory and creates a transaction record.
-     * Returns true if successful.
-     */
     suspend fun recordSale(
         productId: String,
         quantity: Int,
@@ -109,6 +125,16 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
             uiState = UiState.Error(e.message ?: "Failed to record sale")
             false
         }
+    }
+
+    fun getLatestProductById(productId: String): Product? {
+        return _allProducts.value.firstOrNull { it.id == productId }
+    }
+
+    fun hasEnoughStock(productId: String, requestedQuantity: Int): Boolean {
+        val p = getLatestProductById(productId) ?: return false
+        if (requestedQuantity <= 0) return false
+        return p.quantity >= requestedQuantity
     }
 }
 

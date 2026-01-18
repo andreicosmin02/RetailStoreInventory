@@ -7,10 +7,6 @@ import androidx.room.Update
 import com.example.retailstoreinventory.data.local.entities.ProductEntity
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Data access for Products table
- * Single source of truth for all product data
- */
 @Dao
 interface ProductDao {
 
@@ -32,14 +28,32 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE name LIKE '%' || :query || '%' OR barcode LIKE '%' || :query || '%'")
     fun search(query: String): Flow<List<ProductEntity>>
 
+    @Query(
+        """
+        UPDATE products
+        SET quantity = quantity - :decrementBy,
+            updated_at = :updatedAt
+        WHERE id = :productId
+          AND quantity >= :decrementBy
+        """
+    )
+    suspend fun decrementQuantityIfEnough(
+        productId: String,
+        decrementBy: Int,
+        updatedAt: Long
+    ): Int
 
-    /**
-     * Update only the quantity field.
-     * Used when recording a sale.
-     */
-    @Query("UPDATE products SET quantity = quantity - :decrementBy, updated_at = :updatedAt WHERE id = :productId")
-    suspend fun decrementQuantity(productId: String, decrementBy: Int, updatedAt: Long)
-
-//    @Query("DELETE FROM products WHERE id = :productId")
-//    suspend fun delete(productId: String)
+    @Query(
+        """
+        UPDATE products
+        SET quantity = quantity + :incrementBy,
+            updated_at = :updatedAt
+        WHERE id = :productId
+        """
+    )
+    suspend fun incrementQuantity(
+        productId: String,
+        incrementBy: Int,
+        updatedAt: Long
+    ): Int
 }

@@ -15,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -159,22 +158,22 @@ class MainActivity : ComponentActivity() {
                                                 currentScreen = Screen.Main
                                                 currentDetailProduct = null
                                             },
-                                            onRecordSale = { quantityToSell ->
-                                                scope.launch {
-                                                    try {
-                                                        val success = viewModel.recordSale(
-                                                            productId = product.id,
-                                                            quantity = quantityToSell,
-                                                            priceAtSale = product.price
-                                                        )
-                                                        if (success) {
-                                                            Log.d(TAG, "✓ Sale recorded: $quantityToSell units of ${product.name}")
-                                                        } else {
-                                                            Log.e(TAG, "✗ Failed to record sale")
-                                                        }
-                                                    } catch (e: Exception) {
-                                                        Log.e(TAG, "✗ Error recording sale", e)
+                                            onRecordSale = { quantityToSell, priceAtSale ->
+                                                try {
+                                                    val success = viewModel.recordSale(
+                                                        productId = product.id,
+                                                        quantity = quantityToSell,
+                                                        priceAtSale = priceAtSale
+                                                    )
+                                                    if (success) {
+                                                        Log.d(TAG, "✓ Sale recorded: $quantityToSell units of ${product.name}")
+                                                    } else {
+                                                        Log.e(TAG, "✗ Failed to record sale")
                                                     }
+                                                    success
+                                                } catch (e: Exception) {
+                                                    Log.e(TAG, "✗ Error recording sale", e)
+                                                    false
                                                 }
                                             }
                                         )

@@ -21,20 +21,47 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.retailstoreinventory.data.models.Product
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailsScreen(
     product: Product,
     onBack: () -> Unit,
-    onRecordSale: (Int) -> Unit = {}
+    onRecordSale: suspend (Int, Double) -> Boolean = { _, _ -> false }
 ) {
     BackHandler { onBack() }
 
+    val scope = rememberCoroutineScope()
+
+    var currentProduct by remember { mutableStateOf(product) }
+    LaunchedEffect(product.id, product.quantity, product.price, product.name, product.barcode) {
+        currentProduct = product
+    }
+
     var quantityToSell by remember { mutableStateOf("1") }
+    var priceText by remember(product.id) { mutableStateOf(String.format("%.2f", product.price)) }
     var saleInProgress by remember { mutableStateOf(false) }
     var saleMessage by remember { mutableStateOf("") }
-    var currentProduct by remember { mutableStateOf(product) }
+
+    val qtyToSell = quantityToSell.toIntOrNull() ?: 0
+    val parsedPrice = parsePrice(priceText)
+
+    val priceError = when {
+        priceText.isBlank() -> "Price is required"
+        parsedPrice == null -> "Enter a valid price"
+        parsedPrice < 0.0 -> "Price must be >= 0"
+        else -> null
+    }
+
+    val saleTotal = if (qtyToSell > 0 && parsedPrice != null) qtyToSell * parsedPrice else 0.0
+
+    val canSubmit =
+        !saleInProgress &&
+                qtyToSell > 0 &&
+                qtyToSell <= currentProduct.quantity &&
+                parsedPrice != null &&
+                priceError == null
 
     Scaffold(
         topBar = {
@@ -54,7 +81,6 @@ fun DetailsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            // Product Header Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -69,7 +95,6 @@ fun DetailsScreen(
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Product Avatar
                     Box(
                         modifier = Modifier
                             .size(80.dp)
@@ -87,7 +112,6 @@ fun DetailsScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Product Name
                     Text(
                         text = currentProduct.name,
                         style = MaterialTheme.typography.headlineMedium,
@@ -96,7 +120,6 @@ fun DetailsScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Barcode
                     Text(
                         text = "SKU: ${currentProduct.barcode}",
                         style = MaterialTheme.typography.bodySmall,
@@ -105,24 +128,20 @@ fun DetailsScreen(
                 }
             }
 
-            // Product Info Cards
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Price Card
                 InfoCard(
                     label = "Unit Price",
                     value = "$${String.format("%.2f", currentProduct.price)}"
                 )
 
-                // Stock Status Card
                 StockStatusCard(quantity = currentProduct.quantity)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Sale Recording Section
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -144,7 +163,6 @@ fun DetailsScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Quantity Input
                     Text(
                         text = "Quantity to Sell",
                         style = MaterialTheme.typography.labelMedium,
@@ -153,7 +171,6 @@ fun DetailsScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Quantity selector with +/- buttons
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -161,13 +178,10 @@ fun DetailsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Minus button
                         IconButton(
                             onClick = {
                                 val qty = quantityToSell.toIntOrNull() ?: 1
-                                if (qty > 1) {
-                                    quantityToSell = (qty - 1).toString()
-                                }
+                                if (qty > 1) quantityToSell = (qty - 1).toString()
                             },
                             modifier = Modifier
                                 .size(48.dp)
@@ -179,11 +193,9 @@ fun DetailsScreen(
                             Icon(Icons.Default.Remove, null)
                         }
 
-                        // Quantity input field
                         OutlinedTextField(
                             value = quantityToSell,
                             onValueChange = { newValue ->
-                                // Only allow numbers
                                 if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
                                     quantityToSell = newValue
                                 }
@@ -198,13 +210,10 @@ fun DetailsScreen(
                             shape = RoundedCornerShape(8.dp)
                         )
 
-                        // Plus button
                         IconButton(
                             onClick = {
                                 val qty = quantityToSell.toIntOrNull() ?: 1
-                                if (qty < currentProduct.quantity) {
-                                    quantityToSell = (qty + 1).toString()
-                                }
+                                if (qty < currentProduct.quantity) quantityToSell = (qty + 1).toString()
                             },
                             modifier = Modifier
                                 .size(48.dp)
@@ -219,9 +228,31 @@ fun DetailsScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Sale total calculation
-                    val qtyToSell = quantityToSell.toIntOrNull() ?: 0
-                    val saleTotal = if (qtyToSell > 0) qtyToSell * currentProduct.price else 0.0
+                    Text(
+                        text = "Price at Sale",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = priceText,
+                        onValueChange = { input -> priceText = sanitizePriceInput(input) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(textAlign = TextAlign.Center),
+                        shape = RoundedCornerShape(8.dp),
+                        isError = priceError != null
+                    )
+
+                    if (priceError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = priceError)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Row(
                         modifier = Modifier
@@ -249,30 +280,34 @@ fun DetailsScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Record Sale Button
                     Button(
                         onClick = {
-                            val qty = quantityToSell.toIntOrNull() ?: 0
-                            if (qty > 0 && qty <= currentProduct.quantity) {
-                                saleInProgress = true
-                                // Call the callback to record the sale in the database
-                                onRecordSale(qty)
+                            if (!canSubmit) {
+                                saleMessage = "✗ Invalid input"
+                                return@Button
+                            }
+                            val price = parsedPrice
+                            saleInProgress = true
+                            saleMessage = ""
 
-                                // Update local UI
-                                currentProduct = currentProduct.copy(
-                                    quantity = currentProduct.quantity - qty
-                                )
-                                saleMessage = "✓ Sale recorded: $qty unit(s) sold"
-                                quantityToSell = "1"
+                            scope.launch {
+                                val ok = onRecordSale(qtyToSell, price)
                                 saleInProgress = false
-                            } else {
-                                saleMessage = "✗ Invalid quantity (max: ${currentProduct.quantity})"
+                                if (ok) {
+                                    currentProduct = currentProduct.copy(
+                                        quantity = currentProduct.quantity - qtyToSell
+                                    )
+                                    saleMessage = "✓ Sale recorded: $qtyToSell unit(s) sold"
+                                    quantityToSell = "1"
+                                } else {
+                                    saleMessage = "✗ Failed to record sale"
+                                }
                             }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
-                        enabled = !saleInProgress && (quantityToSell.toIntOrNull() ?: 0) > 0 && (quantityToSell.toIntOrNull() ?: 0) <= currentProduct.quantity
+                        enabled = canSubmit
                     ) {
                         if (saleInProgress) {
                             CircularProgressIndicator(
@@ -284,7 +319,6 @@ fun DetailsScreen(
                         }
                     }
 
-                    // Sale message feedback
                     if (saleMessage.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
@@ -314,6 +348,23 @@ fun DetailsScreen(
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
+}
+
+private fun sanitizePriceInput(input: String): String {
+    var s = input.filter { it.isDigit() || it == '.' || it == ',' }
+    val firstSep = s.indexOfFirst { it == '.' || it == ',' }
+    if (firstSep >= 0) {
+        val before = s.substring(0, firstSep).filter { it.isDigit() }
+        val after = s.substring(firstSep + 1).filter { it.isDigit() }
+        s = (before.ifBlank { "0" }) + "." + after
+    }
+    if (s.isNotEmpty() && (s[0] == '.' || s[0] == ',')) s = "0$s"
+    return s
+}
+
+private fun parsePrice(text: String): Double? {
+    val normalized = text.trim().replace(',', '.')
+    return normalized.toDoubleOrNull()
 }
 
 @Composable

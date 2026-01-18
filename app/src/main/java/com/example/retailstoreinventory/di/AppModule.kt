@@ -28,7 +28,9 @@ object AppModule {
             context,
             RetailDatabase::class.java,
             "retail.db"
-        ).build()
+        )
+            .addCallback(RetailDatabase.CALLBACK)
+            .build()
     }
 
     @Provides
@@ -43,8 +45,9 @@ object AppModule {
     @Singleton
     @Provides
     fun provideProductRepository(
+        database: RetailDatabase,
         productDao: ProductDao,
         transactionDao: TransactionDao,
         auditLogDao: AuditLogDao
-    ): ProductRepository = ProductRepositoryImpl(productDao, transactionDao, auditLogDao)
+    ): ProductRepository = ProductRepositoryImpl(database, productDao, transactionDao, auditLogDao)
 }

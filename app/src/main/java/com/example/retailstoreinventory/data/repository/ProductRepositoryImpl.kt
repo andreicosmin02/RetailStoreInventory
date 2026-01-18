@@ -1,91 +1,92 @@
 package com.example.retailstoreinventory.data.repository
 
-import com.example.retailstoreinventory.data.mappers.toDomain
+import androidx.room.withTransaction
+import com.example.retailstoreinventory.data.local.RetailDatabase
 import com.example.retailstoreinventory.data.local.daos.AuditLogDao
 import com.example.retailstoreinventory.data.local.daos.ProductDao
 import com.example.retailstoreinventory.data.local.daos.TransactionDao
 import com.example.retailstoreinventory.data.local.entities.AuditLogEntity
 import com.example.retailstoreinventory.data.local.entities.ProductEntity
 import com.example.retailstoreinventory.data.local.entities.TransactionEntity
+import com.example.retailstoreinventory.data.mappers.toDomain
+import com.example.retailstoreinventory.data.models.InventoryChangeEvent
+import com.example.retailstoreinventory.data.models.InventoryCommand
+import com.example.retailstoreinventory.data.models.InventoryMutationResult
 import com.example.retailstoreinventory.data.models.Product
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import java.util.UUID
-import kotlin.text.ifEmpty
-
 
 class ProductRepositoryImpl(
+    private val db: RetailDatabase,
     private val productDao: ProductDao,
     private val transactionDao: TransactionDao,
     private val auditLogDao: AuditLogDao
 ) : ProductRepository {
 
+    private val inventoryChanges = MutableSharedFlow<InventoryChangeEvent>(extraBufferCapacity = 64)
+
+    override fun observeInventoryChanges(): Flow<InventoryChangeEvent> = inventoryChanges.asSharedFlow()
+
     fun observeAllProducts(): Flow<List<Product>> {
         return productDao.getAll()
-            .onEach { entities ->
-                println("DEBUG: DAO emitted ${entities.size} entities")
-            }
-            .map { entities ->
-                val products = entities.map { it.toDomain() }
-                println("DEBUG: Repository mapped to ${products.size} products")
-                products
-            }
+            .onEach { println("DEBUG: DAO emitted ${it.size}") }
+            .map { it.map { e -> e.toDomain() } }
     }
 
     override suspend fun getProducts(): List<Product> {
-        return try {
-            withContext(Dispatchers.IO) {
-                val entities = productDao.getAll().first()
-                entities.map { it.toDomain() }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            emptyList()
+        return withContext(Dispatchers.IO) {
+            productDao.getAll().first().map { it.toDomain() }
         }
     }
 
     override suspend fun getProductByBarcode(barcode: String): Product? {
         return withContext(Dispatchers.IO) {
-            try {
-                productDao.getByBarcode(barcode)?.toDomain()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
-            }
+            productDao.getByBarcode(barcode)?.toDomain()
         }
     }
 
     override suspend fun addProduct(product: Product): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val entity = ProductEntity(
-                    id = product.id.ifEmpty { UUID.randomUUID().toString() },
-                    barcode = product.barcode,
-                    name = product.name,
-                    quantity = product.quantity,
-                    price = product.price,
-                    createdAt = System.currentTimeMillis(),
-                    updatedAt = System.currentTimeMillis()
-                )
-                productDao.insert(entity)
+                if (product.quantity < 0) return@withContext false
+                if (product.price < 0) return@withContext false
 
-                auditLogDao.insert(AuditLogEntity(
-                    id = UUID.randomUUID().toString(),
-                    entityType = "PRODUCT",
-                    entityId = entity.id,
-                    action = "CREATE",
-                    oldValue = null,
-                    newValue = entity.toString(),
-                    timestamp = System.currentTimeMillis()
-                ))
+                val now = System.currentTimeMillis()
+                val id = product.id.ifBlank { UUID.randomUUID().toString() }
+
+                productDao.insert(
+                    ProductEntity(
+                        id = id,
+                        barcode = product.barcode,
+                        name = product.name,
+                        quantity = product.quantity,
+                        price = product.price,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+
+                auditLogDao.insert(
+                    AuditLogEntity(
+                        id = UUID.randomUUID().toString(),
+                        entityType = "PRODUCT",
+                        entityId = id,
+                        action = "CREATE",
+                        oldValue = null,
+                        newValue = product.copy(id = id).toString(),
+                        timestamp = now
+                    )
+                )
 
                 true
             } catch (e: Exception) {
-                e.printStackTrace()
                 false
             }
         }
@@ -94,107 +95,186 @@ class ProductRepositoryImpl(
     override suspend fun updateProduct(product: Product): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val entity = ProductEntity(
-                    id = product.id,
-                    barcode = product.barcode,
-                    name = product.name,
-                    quantity = product.quantity,
-                    price = product.price,
-                    createdAt = System.currentTimeMillis(),
-                    updatedAt = System.currentTimeMillis()
-                )
-                productDao.update(entity)
+                val existing = productDao.getById(product.id) ?: return@withContext false
+                if (product.quantity != existing.quantity) return@withContext false
+                if (product.price < 0) return@withContext false
 
-                auditLogDao.insert(AuditLogEntity(
-                    id = UUID.randomUUID().toString(),
-                    entityType = "PRODUCT",
-                    entityId = entity.id,
-                    action = "UPDATE",
-                    oldValue = null,
-                    newValue = entity.toString(),
-                    timestamp = System.currentTimeMillis()
-                ))
+                productDao.update(
+                    ProductEntity(
+                        id = product.id,
+                        barcode = product.barcode,
+                        name = product.name,
+                        quantity = existing.quantity,
+                        price = product.price,
+                        createdAt = existing.createdAt,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+
+                auditLogDao.insert(
+                    AuditLogEntity(
+                        id = UUID.randomUUID().toString(),
+                        entityType = "PRODUCT",
+                        entityId = product.id,
+                        action = "UPDATE",
+                        oldValue = null,
+                        newValue = product.toString(),
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
 
                 true
             } catch (e: Exception) {
-                e.printStackTrace()
                 false
             }
         }
     }
 
     override suspend fun deleteProduct(id: String): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val productToDelete = productDao.getById(id)
-                if (productToDelete != null) {
-                    auditLogDao.insert(AuditLogEntity(
-                        id = UUID.randomUUID().toString(),
-                        entityType = "PRODUCT",
-                        entityId = id,
-                        action = "DELETE",
-                        oldValue = productToDelete.toString(),
-                        newValue = null,
-                        timestamp = System.currentTimeMillis()
-                    ))
-                }
-                true
-            } catch (e: Exception) {
-                e.printStackTrace()
-                false
-            }
-        }
+        return withContext(Dispatchers.IO) { true }
     }
 
     override suspend fun searchProducts(query: String): List<Product> {
         return withContext(Dispatchers.IO) {
+            productDao.search(query).first().map { it.toDomain() }
+        }
+    }
+
+    suspend fun applyInventoryCommand(cmd: InventoryCommand): InventoryMutationResult {
+        return withContext(Dispatchers.IO) {
             try {
-                productDao.search(query)
-                    .first()
-                    .map { it.toDomain() }
+                val now = System.currentTimeMillis()
+                var result: InventoryMutationResult = InventoryMutationResult.Error("Mutation failed")
+
+                db.withTransaction {
+                    val productId = when (cmd) {
+                        is InventoryCommand.Sale -> cmd.productId
+                        is InventoryCommand.ReceiveOrder -> cmd.productId
+                    }
+
+                    val product = productDao.getById(productId)
+                    if (product == null) {
+                        result = InventoryMutationResult.Error("Product not found")
+                        return@withTransaction
+                    }
+
+                    val validation = validate(cmd, product)
+                    if (validation is InventoryMutationResult.Error) {
+                        result = validation
+                        return@withTransaction
+                    }
+
+                    when (cmd) {
+                        is InventoryCommand.Sale -> {
+                            val rows = productDao.decrementQuantityIfEnough(productId, cmd.quantity, now)
+                            if (rows == 0) {
+                                result = InventoryMutationResult.Error("Not enough stock")
+                                return@withTransaction
+                            }
+
+                            transactionDao.insert(
+                                TransactionEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    productId = productId,
+                                    quantity = cmd.quantity,
+                                    priceAtSale = cmd.price,
+                                    total = cmd.quantity * cmd.price,
+                                    transactionDate = now,
+                                    createdAt = now
+                                )
+                            )
+
+                            auditLogDao.insert(
+                                AuditLogEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    entityType = "INVENTORY",
+                                    entityId = productId,
+                                    action = "SALE",
+                                    oldValue = "qty=${product.quantity}",
+                                    newValue = "qty=${product.quantity - cmd.quantity}, sold=${cmd.quantity}, price=${cmd.price}, total=${cmd.quantity * cmd.price}",
+                                    timestamp = now
+                                )
+                            )
+
+                            inventoryChanges.tryEmit(
+                                InventoryChangeEvent(
+                                    productId = productId,
+                                    oldQuantity = product.quantity,
+                                    newQuantity = product.quantity - cmd.quantity,
+                                    action = "SALE",
+                                    timestamp = now
+                                )
+                            )
+
+                            result = InventoryMutationResult.Ok
+                        }
+
+                        is InventoryCommand.ReceiveOrder -> {
+                            val rows = productDao.incrementQuantity(productId, cmd.quantity, now)
+                            if (rows == 0) {
+                                result = InventoryMutationResult.Error("Product not found")
+                                return@withTransaction
+                            }
+
+                            auditLogDao.insert(
+                                AuditLogEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    entityType = "INVENTORY",
+                                    entityId = productId,
+                                    action = "ORDER_RECEIVED",
+                                    oldValue = "qty=${product.quantity}",
+                                    newValue = "qty=${product.quantity + cmd.quantity}, received=${cmd.quantity}",
+                                    timestamp = now
+                                )
+                            )
+
+                            inventoryChanges.tryEmit(
+                                InventoryChangeEvent(
+                                    productId = productId,
+                                    oldQuantity = product.quantity,
+                                    newQuantity = product.quantity + cmd.quantity,
+                                    action = "ORDER_RECEIVED",
+                                    timestamp = now
+                                )
+                            )
+
+                            result = InventoryMutationResult.Ok
+                        }
+                    }
+                }
+
+                result
             } catch (e: Exception) {
-                e.printStackTrace()
-                emptyList()
+                InventoryMutationResult.Error("Mutation failed")
             }
         }
     }
 
-    suspend fun recordSale(
-        productId: String,
-        quantity: Int,
-        price: Double
-    ): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val transaction = TransactionEntity(
-                    id = UUID.randomUUID().toString(),
-                    productId = productId,
-                    quantity = quantity,
-                    priceAtSale = price,
-                    total = quantity * price,
-                    transactionDate = System.currentTimeMillis(),
-                    createdAt = System.currentTimeMillis()
-                )
-                transactionDao.insert(transaction)
+    private fun validate(cmd: InventoryCommand, product: ProductEntity): InventoryMutationResult {
+        return when (cmd) {
+            is InventoryCommand.Sale -> {
+                when {
+                    cmd.quantity <= 0 -> InventoryMutationResult.Error("Quantity must be > 0")
+                    cmd.price < 0 -> InventoryMutationResult.Error("Price must be >= 0")
+                    product.quantity - cmd.quantity < 0 -> InventoryMutationResult.Error("Not enough stock")
+                    else -> InventoryMutationResult.Ok
+                }
+            }
 
-                val now = System.currentTimeMillis()
-                productDao.decrementQuantity(productId, quantity, now)
-
-                auditLogDao.insert(AuditLogEntity(
-                    id = UUID.randomUUID().toString(),
-                    entityType = "PRODUCT",
-                    entityId = productId,
-                    action = "UPDATE",
-                    oldValue = null,
-                    newValue = null,
-                    timestamp = now
-                ))
-
-                true
-            } catch (e: Exception) {
-                e.printStackTrace()
-                false
+            is InventoryCommand.ReceiveOrder -> {
+                when {
+                    cmd.quantity <= 0 -> InventoryMutationResult.Error("Quantity must be > 0")
+                    else -> InventoryMutationResult.Ok
+                }
             }
         }
+    }
+
+    suspend fun recordSale(productId: String, quantity: Int, price: Double): Boolean {
+        return applyInventoryCommand(InventoryCommand.Sale(productId, quantity, price)) is InventoryMutationResult.Ok
+    }
+
+    suspend fun recordOrderReceipt(productId: String, quantity: Int): Boolean {
+        return applyInventoryCommand(InventoryCommand.ReceiveOrder(productId, quantity)) is InventoryMutationResult.Ok
     }
 }
