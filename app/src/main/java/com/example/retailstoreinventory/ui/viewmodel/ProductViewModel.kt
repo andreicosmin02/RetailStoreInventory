@@ -49,6 +49,7 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
     }
 
     private val _searchQuery = MutableStateFlow("")
+
     private fun applyFilter(query: String, currentList: List<Product>) {
         val filtered = if (query.isBlank()) {
             currentList
@@ -66,7 +67,7 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
             try {
                 _searchQuery.value = query
                 val currentList = _allProducts.value
-                applyFilter(query, currentList) // Apply filter to the current list in the state flow
+                applyFilter(query, currentList)
                 uiState = if (currentList.isEmpty()) {
                     UiState.Empty
                 } else {
@@ -85,6 +86,28 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
             } catch (e: Exception) {
                 uiState = UiState.Error(e.message ?: "Unknown error")
             }
+        }
+    }
+
+    /**
+     * Record a sale transaction for a product.
+     * This decrements inventory and creates a transaction record.
+     * Returns true if successful.
+     */
+    suspend fun recordSale(
+        productId: String,
+        quantity: Int,
+        priceAtSale: Double
+    ): Boolean {
+        return try {
+            if (repository is ProductRepositoryImpl) {
+                repository.recordSale(productId, quantity, priceAtSale)
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            uiState = UiState.Error(e.message ?: "Failed to record sale")
+            false
         }
     }
 }

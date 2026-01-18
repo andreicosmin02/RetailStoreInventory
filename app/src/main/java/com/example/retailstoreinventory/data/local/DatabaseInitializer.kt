@@ -93,6 +93,16 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 price = 1.8,
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
+            ),
+            // Add this test product that matches common barcode scanner test codes
+            ProductEntity(
+                id = UUID.randomUUID().toString(),
+                barcode = "4980416",
+                name = "Test Product (Barcode Scanner Demo)",
+                quantity = 100,
+                price = 9.99,
+                createdAt = System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis()
             )
         )
 

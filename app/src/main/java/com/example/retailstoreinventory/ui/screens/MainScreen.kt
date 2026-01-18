@@ -23,7 +23,7 @@ import com.example.retailstoreinventory.data.models.Product
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    products: List<Product>, // This now represents the filtered list from ViewModel
+    products: List<Product>,
     onItemClick: (Product) -> Unit,
     onScanClick: () -> Unit,
     onSearch: (String) -> Unit
@@ -31,13 +31,9 @@ fun MainScreen(
     val localFocusManager = LocalFocusManager.current
     val searchBarState = rememberTextFieldState()
 
-    // Update the search query in the ViewModel whenever the text changes
     LaunchedEffect(searchBarState.text) {
-        onSearch(searchBarState.text.toString()) // This updates the ViewModel's internal state and the 'products' list
+        onSearch(searchBarState.text.toString())
     }
-
-    // Set the initial text if needed, maybe from ViewModel if it tracks search state separately
-    // Otherwise, just use the text field normally, and the LaunchedEffect handles updates.
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -51,25 +47,36 @@ fun MainScreen(
             )
         }
     ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).fillMaxSize().clickable(null, null) { localFocusManager.clearFocus() }) {
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .clickable(null, null) { localFocusManager.clearFocus() }
+        ) {
+            // Header
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = "Inventory", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
+                Text(
+                    text = "Inventory",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Black
+                )
                 Spacer(modifier = Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                // Search bar
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     OutlinedTextField(
                         state = searchBarState,
-                        placeholder = { Text("Search stocks...") },
+                        placeholder = { Text("Search products...") },
                         leadingIcon = { Icon(Icons.Default.Search, null) },
                         modifier = Modifier.weight(1f),
                         shape = MaterialTheme.shapes.extraLarge,
                         lineLimits = TextFieldLineLimits.SingleLine
                     )
                     FilledTonalIconButton(
-                        onClick = {
-                            // Sorting logic would need to be handled in the ViewModel too
-                            // For now, just clear focus
-                            localFocusManager.clearFocus()
-                        },
+                        onClick = { localFocusManager.clearFocus() },
                         modifier = Modifier.size(56.dp),
                         shape = MaterialTheme.shapes.extraLarge
                     ) {
@@ -77,9 +84,43 @@ fun MainScreen(
                     }
                 }
             }
-            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(products) { product -> // Use the 'products' list directly, which is now managed by ViewModel
-                    InventoryCard(product = product, onClick = { onItemClick(product) })
+
+            // Products list
+            if (products.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Inventory,
+                            null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "No products found",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(products) { product ->
+                        InventoryCard(
+                            product = product,
+                            onClick = { onItemClick(product) }
+                        )
+                    }
                 }
             }
         }
@@ -89,15 +130,25 @@ fun MainScreen(
 @Composable
 fun InventoryCard(product: Product, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
     ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Product avatar
             Box(
                 modifier = Modifier
                     .size(52.dp)
                     .clip(MaterialTheme.shapes.small)
-                    // Use .background instead of .content
                     .background(color = MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
@@ -108,18 +159,36 @@ fun InventoryCard(product: Product, onClick: () -> Unit) {
                     fontWeight = FontWeight.Bold
                 )
             }
-            Column(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
+
+            // Product info
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = product.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Text(
-                    text = "Available: ${product.quantity}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = "Stock: ${product.quantity}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when {
+                            product.quantity <= 0 -> MaterialTheme.colorScheme.error
+                            product.quantity <= 10 -> MaterialTheme.colorScheme.errorContainer
+                            else -> MaterialTheme.colorScheme.primary
+                        }
+                    )
+                    Text(
+                        text = "$${String.format("%.2f", product.price)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
             }
+
+            // Arrow
             Icon(
                 Icons.AutoMirrored.Filled.ArrowForward,
                 null,

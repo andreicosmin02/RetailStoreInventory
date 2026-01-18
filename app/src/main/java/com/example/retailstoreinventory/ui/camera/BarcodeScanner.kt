@@ -12,9 +12,7 @@ class BarcodeScanner {
     private val reader = MultiFormatReader().apply {
         val hints = mapOf(
             DecodeHintType.POSSIBLE_FORMATS to arrayListOf(
-                BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
-                BarcodeFormat.UPC_A, BarcodeFormat.CODE_128,
-                BarcodeFormat.QR_CODE
+                BarcodeFormat.CODE_128,
             ),
             DecodeHintType.TRY_HARDER to true
         )
@@ -22,31 +20,53 @@ class BarcodeScanner {
     }
 
     fun processImage(image: ImageProxy): String? {
-        val buffer = image.planes[0].buffer
-        val data = ByteArray(buffer.remaining())
-        buffer.get(data)
-
-        val width = image.width
-        val height = image.height
-
-        val rotatedData = ByteArray(data.size)
-        for (y in 0 until height) {
-            for (x in 0 until width) {
-                rotatedData[x * height + height - y - 1] = data[y * width + x]
-            }
-        }
-
-        val source =
-            PlanarYUVLuminanceSource(rotatedData, height, width, 0, 0, height, width, false)
-        val bitmap = BinaryBitmap(HybridBinarizer(source))
-
         return try {
+            val planes = image.planes
+            val buffer = planes[0].buffer
+            val data = ByteArray(buffer.remaining())
+            buffer.get(data)
+
+            val width = image.width
+            val height = image.height
+
+            // CameraX ImageProxy in YUV format needs to be rotated 90 degrees
+            // because camera captures in landscape but we're in portrait mode
+            val rotatedData = rotateYuv90(data, width, height)
+
+            // Create luminance source from rotated data
+            val source = PlanarYUVLuminanceSource(
+                rotatedData,
+                height,  // width becomes height after rotation
+                width,   // height becomes width after rotation
+                0,
+                0,
+                height,
+                width,
+                false
+            )
+
+            val bitmap = BinaryBitmap(HybridBinarizer(source))
             val result = reader.decodeWithState(bitmap)
             result.text
         } catch (e: Exception) {
             null
         } finally {
             reader.reset()
+            image.close()
         }
+    }
+
+    /**
+     * Rotate YUV data 90 degrees clockwise.
+     * Camera captures in landscape, but our UI is in portrait.
+     */
+    private fun rotateYuv90(data: ByteArray, width: Int, height: Int): ByteArray {
+        val rotated = ByteArray(data.size)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                rotated[x * height + (height - y - 1)] = data[y * width + x]
+            }
+        }
+        return rotated
     }
 }
