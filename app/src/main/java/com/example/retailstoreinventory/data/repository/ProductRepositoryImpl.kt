@@ -1,5 +1,6 @@
 package com.example.retailstoreinventory.data.repository
 
+import com.example.retailstoreinventory.data.mappers.toDomain
 import com.example.retailstoreinventory.data.local.daos.AuditLogDao
 import com.example.retailstoreinventory.data.local.daos.ProductDao
 import com.example.retailstoreinventory.data.local.daos.TransactionDao
@@ -196,12 +197,4 @@ class ProductRepositoryImpl(
             }
         }
     }
-
-    private fun ProductEntity.toDomain() = Product(
-        id = id,
-        name = name,
-        quantity = quantity,
-        price = price,
-        barcode = barcode
-    )
 }

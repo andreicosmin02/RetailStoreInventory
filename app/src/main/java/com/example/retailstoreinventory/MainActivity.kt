@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.QrCodeScanner // Add this import for the scanner icon
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,28 +22,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.retailstoreinventory.data.local.RetailDatabase
-import com.example.retailstoreinventory.data.local.daos.AuditLogDao
-import com.example.retailstoreinventory.data.local.daos.ProductDao
-import com.example.retailstoreinventory.data.local.daos.TransactionDao
-import com.example.retailstoreinventory.data.local.entities.AuditLogEntity
-import com.example.retailstoreinventory.data.local.entities.ProductEntity
-import com.example.retailstoreinventory.data.local.entities.TransactionEntity
 import com.example.retailstoreinventory.data.local.initializeSampleData
 import com.example.retailstoreinventory.data.models.Product
 import com.example.retailstoreinventory.data.repository.ProductRepository
-import com.example.retailstoreinventory.data.repository.ProductRepositoryImpl
 import com.example.retailstoreinventory.ui.screens.*
 import com.example.retailstoreinventory.ui.theme.RetailStoreInventoryTheme
 import com.example.retailstoreinventory.ui.viewmodel.ProductViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.UUID
 
 sealed class Screen {
     object Main : Screen()
@@ -53,7 +43,17 @@ sealed class Screen {
     object Scanner : Screen()
 }
 
+@AndroidEntryPoint // <- Don't forget this annotation
 class MainActivity : ComponentActivity() {
+
+    // Inject the database directly into the Activity
+    @Inject
+    lateinit var database: RetailDatabase
+
+    // Inject the repository directly into the Activity (alternative approach)
+    // @Inject
+    // lateinit var repository: ProductRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -62,17 +62,13 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
         setContent {
-            val database = RetailDatabase.getInstance(this@MainActivity)
-            val productDao = database.productDao()
-            val transactionDao = database.transactionDao()
-            val auditLogDao = database.auditLogDao()
-
             var isInitialized by remember { mutableStateOf(false) }
             var initError by remember { mutableStateOf<String?>(null) }
 
             // Initialize database on first load
             LaunchedEffect(Unit) {
                 try {
+                    // Use the injected database instance
                     initializeSampleData(database)
                     isInitialized = true
                 } catch (e: Exception) {
@@ -99,13 +95,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 } else {
-                    // Only create ViewModel AFTER database is initialized
-                    val repository = ProductRepositoryImpl(
-                        productDao = productDao,
-                        transactionDao = transactionDao,
-                        auditLogDao = auditLogDao
-                    )
-                    val viewModel = remember { ProductViewModel(repository) }
+                    // ViewModel is now provided by Hilt
+                    val viewModel: ProductViewModel = hiltViewModel()
+
+                    // You can also inject the repository directly if needed elsewhere in the Activity composable
+                    // val repository: ProductRepository = hiltViewModel() // This won't work directly like this
+                    // Instead, if you really need it in the Activity composable scope, you'd need to pass it from ViewModel
+                    // or inject it directly if you added @Inject lateinit var repository: ProductRepository to MainActivity
+                    // and remove it from the ViewModel constructor (but then ViewModel loses its dependency).
+                    // The ViewModel should be the main consumer of the repository.
 
                     var currentScreen by remember { mutableStateOf<Screen>(Screen.Main) }
                     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -167,8 +165,9 @@ class MainActivity : ComponentActivity() {
                                 is Screen.Providers -> ProvidersScreen(onBack = { currentScreen = Screen.Main })
                                 is Screen.Logs -> LogsScreen(onBack = { currentScreen = Screen.Main })
                                 is Screen.Scanner -> ScannerScreen(onResult = { barcode ->
+                                    // Use the ViewModel to access the repository
                                     scope.launch {
-                                        val foundProduct = repository.getProductByBarcode(barcode)
+                                        val foundProduct = viewModel.getProductByBarcode(barcode) // Call method on ViewModel
                                         if (foundProduct != null) {
                                             currentScreen = Screen.Details(foundProduct)
                                         }

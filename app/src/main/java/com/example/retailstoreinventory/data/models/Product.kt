@@ -8,4 +8,11 @@ data class Product(
     val barcode: String,
     val category: String? = null,
     val description: String? = null
-)
+) {
+    init {
+        require(quantity >= 0) { "Quantity cannot be negative" }
+        require(price >= 0) { "Price cannot be negative" }
+        require(barcode.isNotBlank()) { "Barcode cannot be empty" }
+        require(name.isNotBlank()) { "Product name cannot be empty" }
+    }
+}
