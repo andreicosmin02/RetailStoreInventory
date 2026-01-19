@@ -3,9 +3,11 @@ package com.example.retailstoreinventory.data.repository
 import androidx.room.withTransaction
 import com.example.retailstoreinventory.data.local.RetailDatabase
 import com.example.retailstoreinventory.data.local.daos.AuditLogDao
+import com.example.retailstoreinventory.data.local.daos.InventoryStateDao
 import com.example.retailstoreinventory.data.local.daos.ProductDao
 import com.example.retailstoreinventory.data.local.daos.TransactionDao
 import com.example.retailstoreinventory.data.local.entities.AuditLogEntity
+import com.example.retailstoreinventory.data.local.entities.InventoryStateEntity
 import com.example.retailstoreinventory.data.local.entities.ProductEntity
 import com.example.retailstoreinventory.data.local.entities.TransactionEntity
 import com.example.retailstoreinventory.data.mappers.toDomain
@@ -13,6 +15,7 @@ import com.example.retailstoreinventory.data.models.InventoryChangeEvent
 import com.example.retailstoreinventory.data.models.InventoryCommand
 import com.example.retailstoreinventory.data.models.InventoryMutationResult
 import com.example.retailstoreinventory.data.models.Product
+import com.example.retailstoreinventory.data.monitoring.LowStockAlertService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,7 +30,9 @@ class ProductRepositoryImpl(
     private val db: RetailDatabase,
     private val productDao: ProductDao,
     private val transactionDao: TransactionDao,
-    private val auditLogDao: AuditLogDao
+    private val auditLogDao: AuditLogDao,
+    private val inventoryStateDao: InventoryStateDao,
+    private val lowStockAlertService: LowStockAlertService
 ) : ProductRepository {
 
     private val inventoryChanges = MutableSharedFlow<InventoryChangeEvent>(extraBufferCapacity = 64)
@@ -61,29 +66,40 @@ class ProductRepositoryImpl(
                 val now = System.currentTimeMillis()
                 val id = product.id.ifBlank { UUID.randomUUID().toString() }
 
-                productDao.insert(
-                    ProductEntity(
-                        id = id,
-                        barcode = product.barcode,
-                        name = product.name,
-                        quantity = product.quantity,
-                        price = product.price,
-                        createdAt = now,
-                        updatedAt = now
+                db.withTransaction {
+                    productDao.insert(
+                        ProductEntity(
+                            id = id,
+                            barcode = product.barcode,
+                            name = product.name,
+                            quantity = product.quantity,
+                            price = product.price,
+                            createdAt = now,
+                            updatedAt = now
+                        )
                     )
-                )
 
-                auditLogDao.insert(
-                    AuditLogEntity(
-                        id = UUID.randomUUID().toString(),
-                        entityType = "PRODUCT",
-                        entityId = id,
-                        action = "CREATE",
-                        oldValue = null,
-                        newValue = product.copy(id = id).toString(),
-                        timestamp = now
+                    inventoryStateDao.upsert(
+                        InventoryStateEntity(
+                            productId = id,
+                            quantityOnHand = product.quantity,
+                            quantityAtThreshold = 10,
+                            lastUpdated = now
+                        )
                     )
-                )
+
+                    auditLogDao.insert(
+                        AuditLogEntity(
+                            id = UUID.randomUUID().toString(),
+                            entityType = "PRODUCT",
+                            entityId = id,
+                            action = "CREATE",
+                            oldValue = null,
+                            newValue = product.copy(id = id).toString(),
+                            timestamp = now
+                        )
+                    )
+                }
 
                 true
             } catch (e: Exception) {
@@ -145,12 +161,15 @@ class ProductRepositoryImpl(
             try {
                 val now = System.currentTimeMillis()
                 var result: InventoryMutationResult = InventoryMutationResult.Error("Mutation failed")
+                var affectedProductId: String? = null
 
                 db.withTransaction {
                     val productId = when (cmd) {
                         is InventoryCommand.Sale -> cmd.productId
                         is InventoryCommand.ReceiveOrder -> cmd.productId
                     }
+
+                    affectedProductId = productId
 
                     val product = productDao.getById(productId)
                     if (product == null) {
@@ -172,6 +191,17 @@ class ProductRepositoryImpl(
                                 return@withTransaction
                             }
 
+                            val newQty = product.quantity - cmd.quantity
+
+                            inventoryStateDao.upsert(
+                                InventoryStateEntity(
+                                    productId = productId,
+                                    quantityOnHand = newQty,
+                                    quantityAtThreshold = 10,
+                                    lastUpdated = now
+                                )
+                            )
+
                             transactionDao.insert(
                                 TransactionEntity(
                                     id = UUID.randomUUID().toString(),
@@ -191,7 +221,7 @@ class ProductRepositoryImpl(
                                     entityId = productId,
                                     action = "SALE",
                                     oldValue = "qty=${product.quantity}",
-                                    newValue = "qty=${product.quantity - cmd.quantity}, sold=${cmd.quantity}, price=${cmd.price}, total=${cmd.quantity * cmd.price}",
+                                    newValue = "qty=$newQty, sold=${cmd.quantity}, price=${cmd.price}, total=${cmd.quantity * cmd.price}",
                                     timestamp = now
                                 )
                             )
@@ -200,7 +230,7 @@ class ProductRepositoryImpl(
                                 InventoryChangeEvent(
                                     productId = productId,
                                     oldQuantity = product.quantity,
-                                    newQuantity = product.quantity - cmd.quantity,
+                                    newQuantity = newQty,
                                     action = "SALE",
                                     timestamp = now
                                 )
@@ -216,6 +246,17 @@ class ProductRepositoryImpl(
                                 return@withTransaction
                             }
 
+                            val newQty = product.quantity + cmd.quantity
+
+                            inventoryStateDao.upsert(
+                                InventoryStateEntity(
+                                    productId = productId,
+                                    quantityOnHand = newQty,
+                                    quantityAtThreshold = 10,
+                                    lastUpdated = now
+                                )
+                            )
+
                             auditLogDao.insert(
                                 AuditLogEntity(
                                     id = UUID.randomUUID().toString(),
@@ -223,7 +264,7 @@ class ProductRepositoryImpl(
                                     entityId = productId,
                                     action = "ORDER_RECEIVED",
                                     oldValue = "qty=${product.quantity}",
-                                    newValue = "qty=${product.quantity + cmd.quantity}, received=${cmd.quantity}",
+                                    newValue = "qty=$newQty, received=${cmd.quantity}",
                                     timestamp = now
                                 )
                             )
@@ -232,7 +273,7 @@ class ProductRepositoryImpl(
                                 InventoryChangeEvent(
                                     productId = productId,
                                     oldQuantity = product.quantity,
-                                    newQuantity = product.quantity + cmd.quantity,
+                                    newQuantity = newQty,
                                     action = "ORDER_RECEIVED",
                                     timestamp = now
                                 )
@@ -241,6 +282,10 @@ class ProductRepositoryImpl(
                             result = InventoryMutationResult.Ok
                         }
                     }
+                }
+
+                if (result is InventoryMutationResult.Ok && cmd is InventoryCommand.Sale) {
+                    affectedProductId?.let { lowStockAlertService.checkProduct(it) }
                 }
 
                 result

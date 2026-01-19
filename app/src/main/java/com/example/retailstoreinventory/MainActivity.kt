@@ -1,10 +1,15 @@
 package com.example.retailstoreinventory
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,18 +21,45 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.retailstoreinventory.data.local.RetailDatabase
 import com.example.retailstoreinventory.data.local.initializeSampleData
 import com.example.retailstoreinventory.data.models.Product
-import com.example.retailstoreinventory.ui.screens.*
+import com.example.retailstoreinventory.data.monitoring.LowStockMonitorWorker
+import com.example.retailstoreinventory.ui.screens.DetailsScreen
+import com.example.retailstoreinventory.ui.screens.LogsScreen
+import com.example.retailstoreinventory.ui.screens.MainScreen
+import com.example.retailstoreinventory.ui.screens.OrdersScreen
+import com.example.retailstoreinventory.ui.screens.ProductNotFoundScreen
+import com.example.retailstoreinventory.ui.screens.ProvidersScreen
+import com.example.retailstoreinventory.ui.screens.ScannerScreen
 import com.example.retailstoreinventory.ui.theme.RetailStoreInventoryTheme
 import com.example.retailstoreinventory.ui.viewmodel.ProductViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -59,11 +91,31 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
         }
+
         setContent {
             var isInitialized by remember { mutableStateOf(false) }
             var initError by remember { mutableStateOf<String?>(null) }
 
-            // Initialize database on first load
+            val workManager = WorkManager.getInstance(this@MainActivity)
+
+            fun enqueueInitialLowStockScan() {
+                val req = OneTimeWorkRequestBuilder<LowStockMonitorWorker>().build()
+                workManager.enqueueUniqueWork(
+                    "low_stock_initial_scan",
+                    ExistingWorkPolicy.REPLACE,
+                    req
+                )
+            }
+
+            val notificationLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission(),
+                onResult = { granted ->
+                    if (granted && initError == null && isInitialized) {
+                        enqueueInitialLowStockScan()
+                    }
+                }
+            )
+
             LaunchedEffect(Unit) {
                 try {
                     initializeSampleData(database)
@@ -71,6 +123,22 @@ class MainActivity : ComponentActivity() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Database initialization error", e)
                     initError = e.message
+                }
+
+                if (initError == null) {
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        val granted = ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (granted) {
+                            enqueueInitialLowStockScan()
+                        } else {
+                            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    } else {
+                        enqueueInitialLowStockScan()
+                    }
                 }
             }
 
@@ -104,33 +172,38 @@ class MainActivity : ComponentActivity() {
                         drawerContent = {
                             ModalDrawerSheet {
                                 Box(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
-                                    Text("RetailPro", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        "RetailPro",
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                                 Spacer(Modifier.height(12.dp))
                                 NavigationDrawerItem(
-                                    icon = { Icon(Icons.Default.Inventory, null) },
+                                    icon = { androidx.compose.material3.Icon(Icons.Default.Inventory, null) },
                                     label = { Text("Inventory") },
                                     selected = currentScreen is Screen.Main,
                                     onClick = { currentScreen = Screen.Main; scope.launch { drawerState.close() } },
                                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                                 )
                                 NavigationDrawerItem(
-                                    icon = { Icon(Icons.Default.ShoppingCart, null) },
+                                    icon = { androidx.compose.material3.Icon(Icons.Default.ShoppingCart, null) },
                                     label = { Text("Orders") },
                                     selected = currentScreen is Screen.Orders,
                                     onClick = { currentScreen = Screen.Orders; scope.launch { drawerState.close() } },
                                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                                 )
                                 NavigationDrawerItem(
-                                    icon = { Icon(Icons.Default.Business, null) },
+                                    icon = { androidx.compose.material3.Icon(Icons.Default.Business, null) },
                                     label = { Text("Providers") },
                                     selected = currentScreen is Screen.Providers,
                                     onClick = { currentScreen = Screen.Providers; scope.launch { drawerState.close() } },
                                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                                 )
                                 NavigationDrawerItem(
-                                    icon = { Icon(Icons.Default.History, null) },
+                                    icon = { androidx.compose.material3.Icon(Icons.Default.History, null) },
                                     label = { Text("Logs") },
                                     selected = currentScreen is Screen.Logs,
                                     onClick = { currentScreen = Screen.Logs; scope.launch { drawerState.close() } },
@@ -150,6 +223,7 @@ class MainActivity : ComponentActivity() {
                                     onScanClick = { currentScreen = Screen.Scanner },
                                     onSearch = { query -> viewModel.searchProducts(query) }
                                 )
+
                                 is Screen.Details -> {
                                     currentDetailProduct?.let { product ->
                                         DetailsScreen(
@@ -179,20 +253,26 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                 }
+
                                 is Screen.Orders -> OrdersScreen(onBack = { currentScreen = Screen.Main })
                                 is Screen.Providers -> ProvidersScreen(onBack = { currentScreen = Screen.Main })
                                 is Screen.Logs -> LogsScreen(onBack = { currentScreen = Screen.Main })
-                                is Screen.Scanner -> ScannerScreen(onResult = { barcode ->
-                                    scope.launch {
-                                        val foundProduct = viewModel.getProductByBarcode(barcode)
-                                        if (foundProduct != null) {
-                                            currentDetailProduct = foundProduct
-                                            currentScreen = Screen.Details(foundProduct)
-                                        } else {
-                                            currentScreen = Screen.ProductNotFound(barcode)
+
+                                is Screen.Scanner -> ScannerScreen(
+                                    onResult = { barcode ->
+                                        scope.launch {
+                                            val foundProduct = viewModel.getProductByBarcode(barcode)
+                                            if (foundProduct != null) {
+                                                currentDetailProduct = foundProduct
+                                                currentScreen = Screen.Details(foundProduct)
+                                            } else {
+                                                currentScreen = Screen.ProductNotFound(barcode)
+                                            }
                                         }
-                                    }
-                                }, onBack = { currentScreen = Screen.Main })
+                                    },
+                                    onBack = { currentScreen = Screen.Main }
+                                )
+
                                 is Screen.ProductNotFound -> ProductNotFoundScreen(
                                     barcode = screen.barcode,
                                     onBack = { currentScreen = Screen.Main },

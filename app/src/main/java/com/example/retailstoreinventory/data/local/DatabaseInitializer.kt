@@ -1,26 +1,23 @@
 package com.example.retailstoreinventory.data.local
 
-import kotlinx.coroutines.flow.first
-import com.example.retailstoreinventory.data.local.daos.ProductDao
+import com.example.retailstoreinventory.data.local.entities.InventoryStateEntity
 import com.example.retailstoreinventory.data.local.entities.ProductEntity
+import kotlinx.coroutines.flow.first
 import java.util.UUID
 
-/**
- * Initializes the database with sample products on first launch.
- * Run this once before the app loads the main screen.
- */
 suspend fun initializeSampleData(database: RetailDatabase) {
     val productDao = database.productDao()
+    val inventoryStateDao = database.inventoryStateDao()
 
-    // Check if database already has products
     val shouldInsertSampleData = try {
-        productDao.getAll().first().isEmpty() // Get the first emission and check if empty
+        productDao.getAll().first().isEmpty()
     } catch (e: Exception) {
-        true // If there's an error, assume we should insert samples
+        true
     }
 
-    // Only insert sample data if no products exist
     if (shouldInsertSampleData) {
+        val now = System.currentTimeMillis()
+
         val sampleProducts = listOf(
             ProductEntity(
                 id = UUID.randomUUID().toString(),
@@ -28,8 +25,8 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 name = "Apple",
                 quantity = 50,
                 price = 1.2,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             ),
             ProductEntity(
                 id = UUID.randomUUID().toString(),
@@ -37,8 +34,8 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 name = "Banana",
                 quantity = 30,
                 price = 0.8,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             ),
             ProductEntity(
                 id = UUID.randomUUID().toString(),
@@ -46,8 +43,8 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 name = "Cherry",
                 quantity = 20,
                 price = 2.5,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             ),
             ProductEntity(
                 id = UUID.randomUUID().toString(),
@@ -55,8 +52,8 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 name = "Orange",
                 quantity = 40,
                 price = 1.5,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             ),
             ProductEntity(
                 id = UUID.randomUUID().toString(),
@@ -64,8 +61,8 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 name = "Mango",
                 quantity = 15,
                 price = 2.0,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             ),
             ProductEntity(
                 id = UUID.randomUUID().toString(),
@@ -73,8 +70,8 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 name = "Pineapple",
                 quantity = 10,
                 price = 3.0,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             ),
             ProductEntity(
                 id = UUID.randomUUID().toString(),
@@ -82,8 +79,8 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 name = "Grapes",
                 quantity = 25,
                 price = 2.8,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             ),
             ProductEntity(
                 id = UUID.randomUUID().toString(),
@@ -91,24 +88,54 @@ suspend fun initializeSampleData(database: RetailDatabase) {
                 name = "Peach",
                 quantity = 35,
                 price = 1.8,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             ),
-            // Add this test product that matches common barcode scanner test codes
             ProductEntity(
                 id = UUID.randomUUID().toString(),
                 barcode = "4980416",
                 name = "Test Product (Barcode Scanner Demo)",
                 quantity = 100,
                 price = 9.99,
-                createdAt = System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                createdAt = now,
+                updatedAt = now
             )
         )
 
-        // Insert all sample products
         sampleProducts.forEach { product ->
             productDao.insert(product)
+        }
+
+        sampleProducts.forEachIndexed { index, product ->
+            val threshold = 10
+            val onHand = product.quantity
+            inventoryStateDao.upsert(
+                InventoryStateEntity(
+                    productId = product.id,
+                    quantityOnHand = onHand,
+                    quantityAtThreshold = threshold,
+                    lastUpdated = now
+                )
+            )
+        }
+    } else {
+        val count = inventoryStateDao.countOnce()
+        if (count == 0) {
+            val now = System.currentTimeMillis()
+            val existingProducts = productDao.getAll().first()
+
+            existingProducts.forEachIndexed { index, p ->
+                val threshold = 10
+                val onHand = p.quantity
+                inventoryStateDao.upsert(
+                    InventoryStateEntity(
+                        productId = p.id,
+                        quantityOnHand = onHand,
+                        quantityAtThreshold = threshold,
+                        lastUpdated = now
+                    )
+                )
+            }
         }
     }
 }
