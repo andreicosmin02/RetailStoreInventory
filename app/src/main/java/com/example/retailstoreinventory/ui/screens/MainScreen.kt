@@ -26,10 +26,18 @@ fun MainScreen(
     products: List<Product>,
     onItemClick: (Product) -> Unit,
     onScanClick: () -> Unit,
+    onAddProduct: (Product) -> Unit,
+    onSortClick: () -> Unit,
     onSearch: (String) -> Unit
 ) {
     val localFocusManager = LocalFocusManager.current
     val searchBarState = rememberTextFieldState()
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var barcode by remember { mutableStateOf("") }
+    var qty by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
 
     LaunchedEffect(searchBarState.text) {
         onSearch(searchBarState.text.toString())
@@ -37,14 +45,30 @@ fun MainScreen(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        floatingActionButtonPosition = FabPosition.Center, // ✅ CENTERED correctly
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onScanClick,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                icon = { Icon(Icons.Default.QrCodeScanner, null) },
-                text = { Text("Scan Product") }
-            )
+            Row(
+                modifier = Modifier.wrapContentWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ExtendedFloatingActionButton(
+                    modifier = Modifier.widthIn(min = 160.dp),
+                    onClick = onScanClick,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = { Icon(Icons.Default.QrCodeScanner, null) },
+                    text = { Text("Scan Product") }
+                )
+
+                ExtendedFloatingActionButton(
+                    modifier = Modifier.widthIn(min = 160.dp),
+                    onClick = { showAddDialog = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = { Icon(Icons.Default.Add, null) },
+                    text = { Text("Add Product") }
+                )
+            }
         }
     ) { innerPadding ->
         Column(
@@ -53,7 +77,6 @@ fun MainScreen(
                 .fillMaxSize()
                 .clickable(null, null) { localFocusManager.clearFocus() }
         ) {
-            // Header
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "Inventory",
@@ -62,7 +85,6 @@ fun MainScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Search bar
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -76,7 +98,10 @@ fun MainScreen(
                         lineLimits = TextFieldLineLimits.SingleLine
                     )
                     FilledTonalIconButton(
-                        onClick = { localFocusManager.clearFocus() },
+                        onClick = {
+                            localFocusManager.clearFocus()
+                            onSortClick()
+                        },
                         modifier = Modifier.size(56.dp),
                         shape = MaterialTheme.shapes.extraLarge
                     ) {
@@ -85,7 +110,6 @@ fun MainScreen(
                 }
             }
 
-            // Products list
             if (products.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -112,7 +136,12 @@ fun MainScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 16.dp,
+                        bottom = 16.dp + 88.dp
+                    ),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(products) { product ->
@@ -124,6 +153,46 @@ fun MainScreen(
                 }
             }
         }
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("Add Product") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
+                    OutlinedTextField(value = barcode, onValueChange = { barcode = it }, label = { Text("Barcode") })
+                    OutlinedTextField(value = qty, onValueChange = { qty = it }, label = { Text("Quantity") })
+                    OutlinedTextField(value = price, onValueChange = { price = it }, label = { Text("Price") })
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onAddProduct(
+                            Product(
+                                id = "",
+                                name = name.trim(),
+                                barcode = barcode.trim(),
+                                quantity = qty.toIntOrNull() ?: 0,
+                                price = price.toDoubleOrNull() ?: 0.0
+                            )
+                        )
+                        name = ""
+                        barcode = ""
+                        qty = ""
+                        price = ""
+                        showAddDialog = false
+                    }
+                ) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -144,7 +213,6 @@ fun InventoryCard(product: Product, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Product avatar
             Box(
                 modifier = Modifier
                     .size(52.dp)
@@ -160,7 +228,6 @@ fun InventoryCard(product: Product, onClick: () -> Unit) {
                 )
             }
 
-            // Product info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = product.name,
@@ -188,7 +255,6 @@ fun InventoryCard(product: Product, onClick: () -> Unit) {
                 }
             }
 
-            // Arrow
             Icon(
                 Icons.AutoMirrored.Filled.ArrowForward,
                 null,

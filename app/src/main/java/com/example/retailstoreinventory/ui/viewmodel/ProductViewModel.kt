@@ -18,10 +18,14 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+enum class SortOrder {
+    ASC, DESC
+}
+
 @HiltViewModel
 class ProductViewModel @Inject constructor(private val repository: ProductRepository) : ViewModel() {
-
     private val _allProducts = MutableStateFlow<List<Product>>(emptyList())
+    private val _fullProducts = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = _allProducts.asStateFlow()
 
     var uiState by mutableStateOf<UiState>(UiState.Success)
@@ -30,17 +34,22 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
     val inventoryEvents: Flow<InventoryChangeEvent> = repository.observeInventoryChanges()
 
     private val _searchQuery = MutableStateFlow("")
+    private val _sortOrder = MutableStateFlow(SortOrder.ASC)
 
     init {
         if (repository is ProductRepositoryImpl) {
             viewModelScope.launch {
                 repository.observeAllProducts()
                     .collect { newList ->
-                        _allProducts.value = newList
+                        _fullProducts.value = newList
+
                         if (_searchQuery.value.isNotBlank()) {
                             applyFilter(_searchQuery.value, newList)
+                        } else {
+                            _allProducts.value = newList
                         }
                     }
+
             }
         }
 
@@ -52,7 +61,7 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
     }
 
     private fun applyInventoryEventToState(event: InventoryChangeEvent) {
-        val updated = _allProducts.value.map { p ->
+        val updatedFull = _fullProducts.value.map { p ->
             if (p.id == event.productId) {
                 p.copy(quantity = event.newQuantity)
             } else {
@@ -60,10 +69,12 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
             }
         }
 
+        _fullProducts.value = updatedFull
+
         if (_searchQuery.value.isNotBlank()) {
-            applyFilter(_searchQuery.value, updated)
+            applyFilter(_searchQuery.value, updatedFull)
         } else {
-            _allProducts.value = updated
+            _allProducts.value = updatedFull
         }
     }
 
@@ -71,24 +82,36 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
         return repository.getProductByBarcode(barcode)
     }
 
-    private fun applyFilter(query: String, currentList: List<Product>) {
-        val filtered = if (query.isBlank()) {
-            currentList
-        } else {
-            currentList.filter { product ->
-                product.name.contains(query, ignoreCase = true) ||
-                        product.barcode.contains(query, ignoreCase = true)
-            }
+    private fun applySort(list: List<Product>): List<Product> {
+        return when (_sortOrder.value) {
+            SortOrder.ASC -> list.sortedBy { it.name.lowercase() }
+            SortOrder.DESC -> list.sortedByDescending { it.name.lowercase() }
         }
-        _allProducts.value = filtered
+    }
+
+    private fun applyFilter(query: String, source: List<Product>) {
+        val filtered = source.filter {
+            it.name.contains(query, ignoreCase = true) ||
+                    it.barcode.contains(query, ignoreCase = true)
+        }
+
+        _allProducts.value = applySort(filtered)
     }
 
     fun searchProducts(query: String) {
         viewModelScope.launch {
             try {
-                _searchQuery.value = query
-                val currentList = _allProducts.value
-                applyFilter(query, currentList)
+                val q = query.trim()
+                _searchQuery.value = q
+
+                val sourceList = _fullProducts.value
+
+                if (q.isBlank()) {
+                    _allProducts.value = applySort(sourceList)
+                } else {
+                    applyFilter(q, sourceList)
+                }
+
                 uiState = if (_allProducts.value.isEmpty()) {
                     UiState.Empty
                 } else {
@@ -107,6 +130,19 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
             } catch (e: Exception) {
                 uiState = UiState.Error(e.message ?: "Unknown error")
             }
+        }
+    }
+
+    fun toggleSortOrder() {
+        _sortOrder.value =
+            if (_sortOrder.value == SortOrder.ASC) SortOrder.DESC else SortOrder.ASC
+
+        val source = _fullProducts.value
+
+        if (_searchQuery.value.isBlank()) {
+            _allProducts.value = applySort(source)
+        } else {
+            applyFilter(_searchQuery.value, source)
         }
     }
 
