@@ -255,6 +255,22 @@ class MainActivity : ComponentActivity() {
                                                     Log.e(TAG, "✗ Error recording sale", e)
                                                     false
                                                 }
+                                            },
+                                            onDeleteProduct = {
+                                                try {
+                                                    val success = viewModel.deleteProduct(product.id)
+                                                    if (success) {
+                                                        Log.d(TAG, "✓ Deleted product: ${product.name}")
+                                                        currentScreen = Screen.Main
+                                                        currentDetailProduct = null
+                                                    } else {
+                                                        Log.e(TAG, "✗ Failed to delete product: ${product.name}")
+                                                    }
+                                                    success
+                                                } catch (e: Exception) {
+                                                    Log.e(TAG, "✗ Error deleting product", e)
+                                                    false
+                                                }
                                             }
                                         )
                                     }

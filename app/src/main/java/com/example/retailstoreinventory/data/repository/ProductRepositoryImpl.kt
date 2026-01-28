@@ -2,6 +2,7 @@ package com.example.retailstoreinventory.data.repository
 
 import androidx.room.withTransaction
 import com.example.retailstoreinventory.data.local.RetailDatabase
+import com.example.retailstoreinventory.data.local.daos.AlertDao
 import com.example.retailstoreinventory.data.local.daos.AuditLogDao
 import com.example.retailstoreinventory.data.local.daos.InventoryStateDao
 import com.example.retailstoreinventory.data.local.daos.ProductDao
@@ -32,6 +33,7 @@ class ProductRepositoryImpl(
     private val transactionDao: TransactionDao,
     private val auditLogDao: AuditLogDao,
     private val inventoryStateDao: InventoryStateDao,
+    private val alertDao: AlertDao,
     private val lowStockAlertService: LowStockAlertService
 ) : ProductRepository {
 
@@ -147,7 +149,43 @@ class ProductRepositoryImpl(
     }
 
     override suspend fun deleteProduct(id: String): Boolean {
-        return withContext(Dispatchers.IO) { true }
+        return withContext(Dispatchers.IO) {
+            try {
+                val now = System.currentTimeMillis()
+
+                // Load existing for audit + sanity
+                val existing = productDao.getById(id) ?: return@withContext false
+
+                // If there is sales history, we do NOT hard-delete (append-only ledger + FK safety)
+                val txCount = transactionDao.countForProduct(id)
+                if (txCount > 0) return@withContext false
+
+                db.withTransaction {
+                    // cleanup alerts (no FK assumed, safe even if 0 rows)
+                    alertDao.deleteByProductId(id)
+
+                    // delete product (inventory_state likely cascades)
+                    val rows = productDao.deleteById(id)
+                    if (rows == 0) throw IllegalStateException("Delete failed: product not found")
+
+                    auditLogDao.insert(
+                        AuditLogEntity(
+                            id = UUID.randomUUID().toString(),
+                            entityType = "PRODUCT",
+                            entityId = id,
+                            action = "DELETE",
+                            oldValue = existing.toDomain().toString(),
+                            newValue = null,
+                            timestamp = now
+                        )
+                    )
+                }
+
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
     }
 
     override suspend fun searchProducts(query: String): List<Product> {

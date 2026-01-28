@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,7 +29,8 @@ import kotlinx.coroutines.launch
 fun DetailsScreen(
     product: Product,
     onBack: () -> Unit,
-    onRecordSale: suspend (Int, Double) -> Boolean = { _, _ -> false }
+    onRecordSale: suspend (Int, Double) -> Boolean = { _, _ -> false },
+    onDeleteProduct: suspend () -> Boolean = { false }
 ) {
     BackHandler { onBack() }
 
@@ -41,8 +43,14 @@ fun DetailsScreen(
 
     var quantityToSell by remember { mutableStateOf("1") }
     var priceText by remember(product.id) { mutableStateOf(String.format("%.2f", product.price)) }
+
     var saleInProgress by remember { mutableStateOf(false) }
     var saleMessage by remember { mutableStateOf("") }
+
+    // Delete UI state
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var deleteInProgress by remember { mutableStateOf(false) }
+    var deleteMessage by remember { mutableStateOf("") }
 
     val qtyToSell = quantityToSell.toIntOrNull() ?: 0
     val parsedPrice = parsePrice(priceText)
@@ -58,6 +66,7 @@ fun DetailsScreen(
 
     val canSubmit =
         !saleInProgress &&
+                !deleteInProgress &&
                 qtyToSell > 0 &&
                 qtyToSell <= currentProduct.quantity &&
                 parsedPrice != null &&
@@ -68,13 +77,81 @@ fun DetailsScreen(
             TopAppBar(
                 title = { Text("Product Details") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = { if (!saleInProgress && !deleteInProgress) onBack() },
+                        enabled = !saleInProgress && !deleteInProgress
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            saleMessage = ""
+                            deleteMessage = ""
+                            showDeleteDialog = true
+                        },
+                        enabled = !saleInProgress && !deleteInProgress
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete product"
+                        )
                     }
                 }
             )
         }
     ) { innerPadding ->
+
+        if (showDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    if (!deleteInProgress) showDeleteDialog = false
+                },
+                title = { Text("Delete product?") },
+                text = {
+                    Text(
+                        "This will remove \"${currentProduct.name}\" from your inventory. " +
+                                "This action can't be undone."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            deleteInProgress = true
+                            deleteMessage = ""
+                            scope.launch {
+                                val ok = onDeleteProduct()
+                                deleteInProgress = false
+                                showDeleteDialog = false
+                                if (ok) {
+                                    onBack()
+                                } else {
+                                    deleteMessage = "✗ Failed to delete product"
+                                }
+                            }
+                        },
+                        enabled = !deleteInProgress
+                    ) {
+                        if (deleteInProgress) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Delete")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDeleteDialog = false },
+                        enabled = !deleteInProgress
+                    ) { Text("Cancel") }
+                }
+            )
+        }
+
         Column(
             modifier = Modifier
                 .padding(innerPadding)
@@ -140,6 +217,24 @@ fun DetailsScreen(
                 StockStatusCard(quantity = currentProduct.quantity)
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (deleteMessage.isNotEmpty()) {
+                Text(
+                    text = deleteMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.errorContainer,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(12.dp)
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             Card(
@@ -188,7 +283,8 @@ fun DetailsScreen(
                                 .background(
                                     MaterialTheme.colorScheme.surfaceContainer,
                                     RoundedCornerShape(8.dp)
-                                )
+                                ),
+                            enabled = !deleteInProgress
                         ) {
                             Icon(Icons.Default.Remove, null)
                         }
@@ -207,7 +303,8 @@ fun DetailsScreen(
                             textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 textAlign = TextAlign.Center
                             ),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = !deleteInProgress
                         )
 
                         IconButton(
@@ -220,7 +317,8 @@ fun DetailsScreen(
                                 .background(
                                     MaterialTheme.colorScheme.surfaceContainer,
                                     RoundedCornerShape(8.dp)
-                                )
+                                ),
+                            enabled = !deleteInProgress
                         ) {
                             Icon(Icons.Default.Add, null)
                         }
@@ -244,7 +342,8 @@ fun DetailsScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(textAlign = TextAlign.Center),
                         shape = RoundedCornerShape(8.dp),
-                        isError = priceError != null
+                        isError = priceError != null,
+                        enabled = !deleteInProgress
                     )
 
                     if (priceError != null) {
@@ -289,6 +388,7 @@ fun DetailsScreen(
                             val price = parsedPrice
                             saleInProgress = true
                             saleMessage = ""
+                            deleteMessage = ""
 
                             scope.launch {
                                 val ok = onRecordSale(qtyToSell, price)

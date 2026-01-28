@@ -56,4 +56,8 @@ interface ProductDao {
         incrementBy: Int,
         updatedAt: Long
     ): Int
+
+    @Query("DELETE FROM products WHERE id = :productId")
+    suspend fun deleteById(productId: String): Int
+
 }

@@ -25,4 +25,8 @@ interface AlertDao {
         WHERE id = :alertId AND status = 'PENDING'
     """)
     suspend fun acknowledge(alertId: String, acknowledgedAt: Long): Int
+
+    @Query("DELETE FROM alerts WHERE product_id = :productId")
+    suspend fun deleteByProductId(productId: String): Int
+
 }

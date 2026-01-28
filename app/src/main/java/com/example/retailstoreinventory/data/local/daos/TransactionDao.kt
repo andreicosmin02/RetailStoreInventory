@@ -50,4 +50,8 @@ interface TransactionDao {
         WHERE transaction_date >= :startDate AND transaction_date <= :endDate
     """)
     suspend fun getTotalRevenue(startDate: Long, endDate: Long): Double
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE product_id = :productId")
+    suspend fun countForProduct(productId: String): Int
+
 }

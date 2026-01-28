@@ -60,6 +60,7 @@ object AppModule {
         transactionDao: TransactionDao,
         auditLogDao: AuditLogDao,
         inventoryStateDao: InventoryStateDao,
+        alertDao: AlertDao,
         lowStockAlertService: LowStockAlertService
     ): ProductRepository = ProductRepositoryImpl(
         database,
@@ -67,6 +68,7 @@ object AppModule {
         transactionDao,
         auditLogDao,
         inventoryStateDao,
+        alertDao,
         lowStockAlertService
     )
 }

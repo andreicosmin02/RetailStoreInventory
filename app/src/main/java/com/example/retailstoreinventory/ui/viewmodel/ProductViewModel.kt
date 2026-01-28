@@ -163,6 +163,20 @@ class ProductViewModel @Inject constructor(private val repository: ProductReposi
         }
     }
 
+    suspend fun deleteProduct(productId: String): Boolean {
+        return try {
+            if (repository is ProductRepositoryImpl) {
+                repository.deleteProduct(productId)
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            uiState = UiState.Error(e.message ?: "Failed to delete product")
+            false
+        }
+    }
+
+
     fun getLatestProductById(productId: String): Product? {
         return _allProducts.value.firstOrNull { it.id == productId }
     }
