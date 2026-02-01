@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.retailstoreinventory.ui.viewmodel.AuditLogsViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,75 +40,18 @@ enum class AuditSeverity {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogsScreen(onBack: () -> Unit) {
+fun LogsScreen(
+    onBack: () -> Unit,
+    viewModel: AuditLogsViewModel = hiltViewModel()
+) {
     BackHandler { onBack() }
 
-    // Mock data - in real app, this would come from ViewModel
-    val mockLogs = listOf(
-        AuditEntry(
-            id = "1",
-            action = "SALE",
-            entityType = "Product",
-            entityName = "Apple",
-            details = "5 units sold, -$6.00",
-            timestamp = System.currentTimeMillis() - 600000,
-            severity = AuditSeverity.INFO
-        ),
-        AuditEntry(
-            id = "2",
-            action = "RESTOCK",
-            entityType = "Product",
-            entityName = "Banana",
-            details = "Restocked 20 units",
-            timestamp = System.currentTimeMillis() - 1800000,
-            severity = AuditSeverity.INFO
-        ),
-        AuditEntry(
-            id = "3",
-            action = "LOW_STOCK_ALERT",
-            entityType = "Product",
-            entityName = "Mango",
-            details = "Stock below threshold (5 units)",
-            timestamp = System.currentTimeMillis() - 3600000,
-            severity = AuditSeverity.WARNING
-        ),
-        AuditEntry(
-            id = "4",
-            action = "UPDATE",
-            entityType = "Product",
-            entityName = "Orange",
-            details = "Price updated: $1.50 → $1.75",
-            timestamp = System.currentTimeMillis() - 7200000,
-            severity = AuditSeverity.INFO
-        ),
-        AuditEntry(
-            id = "5",
-            action = "OUT_OF_STOCK",
-            entityType = "Product",
-            entityName = "Pineapple",
-            details = "Product out of stock",
-            timestamp = System.currentTimeMillis() - 86400000,
-            severity = AuditSeverity.WARNING
-        ),
-        AuditEntry(
-            id = "6",
-            action = "SALE",
-            entityType = "Product",
-            entityName = "Grapes",
-            details = "3 units sold, -$8.40",
-            timestamp = System.currentTimeMillis() - 86400000 - 3600000,
-            severity = AuditSeverity.INFO
-        ),
-        AuditEntry(
-            id = "7",
-            action = "DELETE",
-            entityType = "Product",
-            entityName = "Expired Item",
-            details = "Removed from inventory",
-            timestamp = System.currentTimeMillis() - 172800000,
-            severity = AuditSeverity.ERROR
-        ),
-    )
+    val logs by viewModel.logs.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadLogs()
+    }
 
     Scaffold(
         topBar = {
@@ -146,7 +91,7 @@ fun LogsScreen(onBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "${mockLogs.size} events",
+                        text = "${logs.size} events",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -155,7 +100,14 @@ fun LogsScreen(onBack: () -> Unit) {
             }
 
             // Logs list
-            if (mockLogs.isEmpty()) {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (logs.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -186,7 +138,7 @@ fun LogsScreen(onBack: () -> Unit) {
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(mockLogs) { log ->
+                    items(logs) { log ->
                         AuditLogCard(log = log)
                     }
                 }
@@ -217,7 +169,7 @@ fun AuditLogCard(log: AuditEntry) {
                     .background(
                         color = when (log.action) {
                             "SALE" -> MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                            "RESTOCK" -> Color(0xFF4CAF50).copy(alpha = 0.1f)
+                            "ORDER_RECEIVED" -> Color(0xFF4CAF50).copy(alpha = 0.1f)
                             "DELETE" -> MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
                             else -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)
                         },
@@ -227,7 +179,7 @@ fun AuditLogCard(log: AuditEntry) {
             ) {
                 Icon(
                     imageVector = when (log.action) {
-                        "SALE" -> Icons.Default.Add
+                        "SALE", "ORDER_RECEIVED" -> Icons.Default.Add
                         "DELETE" -> Icons.Default.Delete
                         else -> Icons.Default.Edit
                     },
@@ -235,7 +187,7 @@ fun AuditLogCard(log: AuditEntry) {
                     modifier = Modifier.size(24.dp),
                     tint = when (log.action) {
                         "SALE" -> MaterialTheme.colorScheme.primary
-                        "RESTOCK" -> Color(0xFF4CAF50)
+                        "ORDER_RECEIVED" -> Color(0xFF4CAF50)
                         "DELETE" -> MaterialTheme.colorScheme.error
                         else -> MaterialTheme.colorScheme.secondary
                     }
