@@ -17,9 +17,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.retailstoreinventory.ui.viewmodel.OrdersViewModel
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 data class SaleRecord(
     val id: String,
