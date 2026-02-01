@@ -19,81 +19,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
-data class Supplier(
-    val id: String,
-    val name: String,
-    val category: String,
-    val contact: String,
-    val email: String,
-    val phone: String,
-    val location: String,
-    val rating: Double
-)
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.retailstoreinventory.ui.viewmodel.ProvidersViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProvidersScreen(onBack: () -> Unit) {
+fun ProvidersScreen(
+    onBack: () -> Unit,
+    viewModel: ProvidersViewModel = hiltViewModel()
+) {
     BackHandler { onBack() }
 
-    // Mock data - in real app, this would come from ViewModel
-    val mockSuppliers = listOf(
-        Supplier(
-            id = "1",
-            name = "Fresh Produce Co.",
-            category = "Fruits & Vegetables",
-            contact = "John Smith",
-            email = "john@freshproduce.com",
-            phone = "+1-555-0101",
-            location = "Springfield",
-            rating = 4.8
-        ),
-        Supplier(
-            id = "2",
-            name = "Organic Growers Inc.",
-            category = "Organic Products",
-            contact = "Sarah Johnson",
-            email = "sarah@organicgrowers.com",
-            phone = "+1-555-0102",
-            location = "Shelbyville",
-            rating = 4.6
-        ),
-        Supplier(
-            id = "3",
-            name = "Bulk Foods Ltd.",
-            category = "Wholesale",
-            contact = "Mike Davis",
-            email = "mike@bulkfoods.com",
-            phone = "+1-555-0103",
-            location = "Capital City",
-            rating = 4.5
-        ),
-        Supplier(
-            id = "4",
-            name = "Local Farmers Market",
-            category = "Local Produce",
-            contact = "Emma Wilson",
-            email = "emma@localfarmers.com",
-            phone = "+1-555-0104",
-            location = "Riverside",
-            rating = 4.9
-        ),
-        Supplier(
-            id = "5",
-            name = "Premium Imports",
-            category = "International",
-            contact = "Carlos Rodriguez",
-            email = "carlos@premiumimports.com",
-            phone = "+1-555-0105",
-            location = "Metro City",
-            rating = 4.3
-        ),
-    )
+    val providers by viewModel.providers.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.loadProviders()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Suppliers") },
+                title = { Text("Providers") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
@@ -122,13 +69,13 @@ fun ProvidersScreen(onBack: () -> Unit) {
                         .padding(20.dp)
                 ) {
                     Text(
-                        "Active Suppliers",
+                        "Active Providers",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "${mockSuppliers.size} suppliers",
+                        text = "${providers.size} providers",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -136,16 +83,48 @@ fun ProvidersScreen(onBack: () -> Unit) {
                 }
             }
 
-            // Suppliers list
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(mockSuppliers) { supplier ->
-                    SupplierCard(supplier = supplier)
+            // Providers list
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (providers.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Business,
+                            null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "No providers yet",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(providers) { provider ->
+                        ProviderCard(provider = provider)
+                    }
                 }
             }
         }
@@ -153,7 +132,7 @@ fun ProvidersScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun SupplierCard(supplier: Supplier) {
+fun ProviderCard(provider: com.example.retailstoreinventory.ui.viewmodel.Provider) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -173,13 +152,13 @@ fun SupplierCard(supplier: Supplier) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = supplier.name,
+                        text = provider.name,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = supplier.category,
+                        text = provider.category,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -195,7 +174,7 @@ fun SupplierCard(supplier: Supplier) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "⭐ ${String.format("%.1f", supplier.rating)}",
+                        text = "⭐ ${String.format("%.1f", provider.rating)}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -204,7 +183,7 @@ fun SupplierCard(supplier: Supplier) {
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Divider()
+            HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
             // Contact info
@@ -221,7 +200,7 @@ fun SupplierCard(supplier: Supplier) {
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = supplier.contact,
+                        text = provider.contact,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -238,7 +217,7 @@ fun SupplierCard(supplier: Supplier) {
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = supplier.email,
+                        text = provider.email,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -255,7 +234,7 @@ fun SupplierCard(supplier: Supplier) {
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = supplier.phone,
+                        text = provider.phone,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -272,7 +251,7 @@ fun SupplierCard(supplier: Supplier) {
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = supplier.location,
+                        text = provider.location,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
