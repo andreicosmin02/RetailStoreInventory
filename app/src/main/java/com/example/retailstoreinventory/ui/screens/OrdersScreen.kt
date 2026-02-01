@@ -1,12 +1,11 @@
 package com.example.retailstoreinventory.ui.screens
 
+import android.annotation.SuppressLint
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -16,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.retailstoreinventory.ui.viewmodel.OrdersViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,56 +30,19 @@ data class SaleRecord(
     val timestamp: Long
 )
 
+@SuppressLint("DefaultLocale")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OrdersScreen(onBack: () -> Unit) {
+fun OrdersScreen(onBack: () -> Unit, viewModel: OrdersViewModel = hiltViewModel()) {
     BackHandler { onBack() }
 
-    // Mock data - in real app, this would come from ViewModel
-    val mockSales = listOf(
-        SaleRecord(
-            id = "1",
-            productName = "Apple",
-            quantity = 5,
-            pricePerUnit = 1.20,
-            total = 6.00,
-            timestamp = System.currentTimeMillis() - 600000 // 10 mins ago
-        ),
-        SaleRecord(
-            id = "2",
-            productName = "Banana",
-            quantity = 3,
-            pricePerUnit = 0.80,
-            total = 2.40,
-            timestamp = System.currentTimeMillis() - 1800000 // 30 mins ago
-        ),
-        SaleRecord(
-            id = "3",
-            productName = "Orange",
-            quantity = 2,
-            pricePerUnit = 1.50,
-            total = 3.00,
-            timestamp = System.currentTimeMillis() - 3600000 // 1 hour ago
-        ),
-        SaleRecord(
-            id = "4",
-            productName = "Mango",
-            quantity = 4,
-            pricePerUnit = 2.00,
-            total = 8.00,
-            timestamp = System.currentTimeMillis() - 7200000 // 2 hours ago
-        ),
-        SaleRecord(
-            id = "5",
-            productName = "Pineapple",
-            quantity = 1,
-            pricePerUnit = 3.00,
-            total = 3.00,
-            timestamp = System.currentTimeMillis() - 86400000 // 1 day ago
-        ),
-    )
+    val sales by viewModel.sales.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val totalRevenue by viewModel.totalRevenue.collectAsState()
 
-    val totalRevenue = mockSales.sumOf { it.total }
+    LaunchedEffect(Unit) {
+        viewModel.loadSales()
+    }
 
     Scaffold(
         topBar = {
@@ -125,7 +89,7 @@ fun OrdersScreen(onBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "${mockSales.size} transactions",
+                        "${sales.size} transactions",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                     )
@@ -133,7 +97,14 @@ fun OrdersScreen(onBack: () -> Unit) {
             }
 
             // Sales list
-            if (mockSales.isEmpty()) {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (sales.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -164,7 +135,7 @@ fun OrdersScreen(onBack: () -> Unit) {
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(mockSales) { sale ->
+                    items(sales) { sale ->
                         SaleCard(sale = sale)
                     }
                 }
@@ -173,6 +144,7 @@ fun OrdersScreen(onBack: () -> Unit) {
     }
 }
 
+@SuppressLint("DefaultLocale")
 @Composable
 fun SaleCard(sale: SaleRecord) {
     Card(
